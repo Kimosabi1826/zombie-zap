@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zombie Zap</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="storm-overlay"></div>
+  <div class="rain rain-1"></div>
+  <div class="rain rain-2"></div>
+  <div class="particles" id="particles"></div>
+  <div class="flash-layer" id="flashLayer"></div>
+
+  <main class="app-shell">
+    <header class="hero">
+      <h1>🧟 Zombie Zap 🔫</h1>
+      <p class="subtitle">
+        Zap 30 zombie heads as fast as you can. Fast hands help, but wild clicking will wreck your accuracy.
+      </p>
+    </header>
+
+    <section class="hud">
+      <div class="card stat-card">
+        <span class="label">Hits</span>
+        <span class="value"><span id="hits">0</span> / 30</span>
+      </div>
+
+      <div class="card stat-card">
+        <span class="label">Time</span>
+        <span class="value"><span id="time">0.00</span>s</span>
+      </div>
+
+      <div class="card stat-card">
+        <span class="label">Level</span>
+        <span class="value" id="level">1</span>
+      </div>
+
+      <div class="card stat-card">
+        <span class="label">Combo</span>
+        <span class="value" id="combo">0</span>
+      </div>
+
+      <div class="card stat-card">
+        <span class="label">Accuracy</span>
+        <span class="value" id="accuracy">100%</span>
+      </div>
+
+      <div class="card stat-card">
+        <span class="label">Best Time</span>
+        <span class="value" id="bestTime">--</span>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="startBtn" class="main-btn start-btn">Start Zap</button>
+      <button id="resetBtn" class="main-btn reset-btn">Reset</button>
+      <button id="soundBtn" class="main-btn sound-btn">Sound: On</button>
+    </section>
+
+    <p id="message" class="message">Press Start and prepare to roast some zombies.</p>
+
+    <section class="arena-wrap">
+      <div class="level-flash" id="levelFlash">LEVEL UP!</div>
+      <div class="combo-pop" id="comboPop">COMBO x5</div>
+      <div class="miss-pop" id="missPop">MISS!</div>
+
+      <div class="game-area" id="gameArea">
+        <div class="fog fog-1"></div>
+        <div class="fog fog-2"></div>
+        <div class="fog fog-3"></div>
+
+        <div class="progress-wrap">
+          <div class="progress-top">
+            <span>Zombie Cleanup</span>
+            <span id="progressText">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <div id="burstLayer" class="burst-layer"></div>
+        <button id="target" class="target" hidden aria-label="Zombie target">🧟</button>
+      </div>
+    </section>
+
+    <section class="bottom-grid">
+      <div class="card info-card">
+        <h2>How to Play</h2>
+        <ul>
+          <li>Press <strong>Start Zap</strong></li>
+          <li>Click zombie heads as fast as possible</li>
+          <li>The game gets harder at 10 and 20 hits</li>
+          <li>Combo streaks make you feel like a hero</li>
+          <li>Missed clicks lower your accuracy</li>
+          <li>Finish all 30 hits for your final time</li>
+        </ul>
+      </div>
+
+      <div class="card leaderboard-card">
+        <h2>Top 10 Fastest Zappers</h2>
+        <ol id="leaderboardList"></ol>
+      </div>
+    </section>
+  </main>
+
+  <div class="screen-overlay" id="titleScreen">
+    <div class="screen-card">
+      <h2>🧟 Zombie Zap 🔫</h2>
+      <p>
+        The zombies are loose.<br />
+        Your laser finger is the last hope.
+      </p>
+      <button id="titleStartBtn" class="main-btn start-btn screen-btn">Play Now</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="resultModal">
+    <div class="modal-card">
+      <h2 id="resultTitle">Round Complete!</h2>
+      <p id="resultTime">Your time: 0.00s</p>
+      <p id="resultAccuracy">Accuracy: 100%</p>
+      <p id="resultRank">Rank: --</p>
+
+      <div id="nameEntryWrap" class="name-entry hidden">
+        <label for="playerName">Top 10 zapper! Enter your name:</label>
+        <input id="playerName" type="text" maxlength="16" placeholder="Your name" />
+        <button id="saveScoreBtn" class="main-btn start-btn modal-btn">Save Score</button>
+      </div>
+
+      <div class="game-over-buttons">
+        <button id="playAgainBtn" class="main-btn start-btn modal-btn">Zap Again</button>
+        <button id="closeModalBtn" class="main-btn reset-btn modal-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
