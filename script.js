@@ -1,5 +1,6 @@
 const goalHits = 30;
 const leaderboardKey = "zombieZapTop10";
+const lambdaSaveUrl = "https://kkdh7ntgy24mkphgy4wsutfjou0kzndo.lambda-url.us-east-2.on.aws/";
 const zombieFaces = ["🧟", "🤢", "💀", "👹"];
 const burstTexts = ["+1", "Nice!", "Headshot!", "Zap!", "Boom!"];
 
@@ -433,7 +434,28 @@ function finishGame() {
   renderLeaderboard();
 }
 
-function savePendingScore() {
+async function saveScoreToAws(name, time, accuracy) {
+  try {
+    const response = await fetch(lambdaSaveUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        playerName: name,
+        time: time,
+        accuracy: accuracy
+      })
+    });
+
+    const result = await response.json();
+    console.log("AWS save result:", result);
+  } catch (error) {
+    console.error("AWS save failed:", error);
+  }
+}
+
+async function savePendingScore() {
   if (!pendingScore || !pendingScore.qualifies) return;
 
   const name = playerNameInput.value.trim() || "Player";
@@ -450,6 +472,8 @@ function savePendingScore() {
   const trimmed = saved.slice(0, 10);
   setSavedScores(trimmed);
   renderLeaderboard();
+
+  await saveScoreToAws(name, pendingScore.time, pendingScore.accuracy);
 
   resultRank.textContent = "Score saved!";
   nameEntryWrap.classList.add("hidden");
