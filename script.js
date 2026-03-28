@@ -2,6 +2,7 @@ const goalHits = 30;
 const missPenaltySeconds = 1;
 const leaderboardKey = "zombieZapTop10";
 const lambdaSaveUrl = "https://kkdh7ntgy24mkphgy4wsutfjou0kzndo.lambda-url.us-east-2.on.aws/";
+const lambdaGetUrl = "https://iqvynpjgeoamfhuhcr4k63goxy0pfbfi.lambda-url.us-east-1.on.aws/";
 const zombieFaces = ["🧟", "🤢", "💀", "👹"];
 const burstTexts = ["+1", "Nice!", "Headshot!", "Zap!", "Boom!"];
 const levelBackgrounds = {
@@ -62,6 +63,9 @@ let pendingScore = null;
 let soundEnabled = true;
 let audioCtx = null;
 
+let cloudScores = [];
+let leaderboardLoading = false;
+
 function injectPolishStyles() {
   if (document.getElementById("zombie-zap-polish-styles")) return;
 
@@ -69,11 +73,19 @@ function injectPolishStyles() {
   style.id = "zombie-zap-polish-styles";
   style.textContent = `
     .game-area {
-      transition: background-image 0.45s ease, box-shadow 0.25s ease;
+      transition: background-image 0.45s ease, box-shadow 0.25s ease, transform 0.18s ease;
     }
 
     .game-area.shake {
       animation: zzShake 0.28s ease;
+    }
+
+    .game-area.hit-pulse {
+      animation: zzHitPulse 0.18s ease;
+    }
+
+    .game-area.miss-pulse::before {
+      animation: zzMissGlow 0.28s ease;
     }
 
     @keyframes zzShake {
@@ -84,6 +96,18 @@ function injectPolishStyles() {
       60% { transform: translateX(6px); }
       75% { transform: translateX(-3px); }
       100% { transform: translateX(0); }
+    }
+
+    @keyframes zzHitPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.008); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes zzMissGlow {
+      0% { opacity: 0; }
+      30% { opacity: 1; }
+      100% { opacity: 0; }
     }
 
     .ember-layer {
@@ -135,6 +159,9 @@ function injectPolishStyles() {
       filter: drop-shadow(0 6px 8px rgba(0,0,0,0.35));
       animation: walkerBob 2s ease-in-out infinite;
       user-select: none;
+      text-shadow:
+        0 0 8px rgba(255,255,255,0.10),
+        0 0 14px rgba(255, 110, 20, 0.18);
     }
 
     .walker.left {
@@ -186,8 +213,32 @@ function injectPolishStyles() {
         0 20px 40px rgba(0,0,0,0.38);
     }
 
+    .game-area.level-3 .walker {
+      animation-duration: 1.9s, 8s;
+      opacity: 0.82;
+    }
+
     #target {
       z-index: 8 !important;
+    }
+
+    #target.teleport-in {
+      animation: targetTeleport 0.16s ease;
+    }
+
+    @keyframes targetTeleport {
+      0% {
+        transform: scale(0.6) rotate(-14deg);
+        opacity: 0.35;
+      }
+      75% {
+        transform: scale(1.08) rotate(6deg);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
     }
 
     .score-burst {
@@ -198,6 +249,13 @@ function injectPolishStyles() {
     #comboPop,
     #missPop {
       z-index: 10 !important;
+    }
+
+    .leaderboard-loading {
+      color: #d9e3dc;
+      opacity: 0.82;
+      font-style: italic;
+      background: rgba(255,255,255,0.04);
     }
   `;
   document.head.appendChild(style);
@@ -281,6 +339,24 @@ function triggerMissShake() {
   gameArea.classList.remove("shake");
   void gameArea.offsetWidth;
   gameArea.classList.add("shake");
+}
+
+function triggerHitPulse() {
+  gameArea.classList.remove("hit-pulse");
+  void gameArea.offsetWidth;
+  gameArea.classList.add("hit-pulse");
+}
+
+function triggerMissPulse() {
+  gameArea.classList.remove("miss-pulse");
+  void gameArea.offsetWidth;
+  gameArea.classList.add("miss-pulse");
+}
+
+function triggerTargetTeleport() {
+  target.classList.remove("teleport-in");
+  void target.offsetWidth;
+  target.classList.add("teleport-in");
 }
 
 function getAudioContext() {
@@ -430,11 +506,25 @@ function setSavedScores(scores) {
   localStorage.setItem(leaderboardKey, JSON.stringify(scores));
 }
 
-function renderLeaderboard() {
-  const saved = getSavedScores();
+function getMedal(index) {
+  if (index === 0) return "🥇 ";
+  if (index === 1) return "🥈 ";
+  if (index === 2) return "🥉 ";
+  return "";
+}
+
+function renderLeaderboard(scores = cloudScores) {
   leaderboardList.innerHTML = "";
 
-  if (saved.length === 0) {
+  if (leaderboardLoading) {
+    const li = document.createElement("li");
+    li.textContent = "Loading apocalypse rankings...";
+    li.className = "empty leaderboard-loading";
+    leaderboardList.appendChild(li);
+    return;
+  }
+
+  if (!scores || scores.length === 0) {
     const li = document.createElement("li");
     li.textContent = "No zombie zappers yet.";
     li.className = "empty";
@@ -443,30 +533,69 @@ function renderLeaderboard() {
     return;
   }
 
-  saved.forEach((entry, index) => {
+  scores.forEach((entry, index) => {
+    const accuracyValue =
+      typeof entry.accuracy === "number"
+        ? entry.accuracy
+        : Number(entry.accuracy);
+
     const accuracyText =
-      typeof entry.accuracy === "number" ? ` — ${entry.accuracy.toFixed(1)}%` : "";
+      Number.isFinite(accuracyValue)
+        ? ` — ${accuracyValue.toFixed(1)}%`
+        : "";
+
+    const playerName = entry.playerName || entry.name || "Player";
+    const timeValue = Number(entry.time);
 
     const li = document.createElement("li");
-    li.textContent = `#${index + 1} ${entry.name} — ${entry.time.toFixed(2)}s${accuracyText}`;
+    li.textContent = `${getMedal(index)}#${index + 1} ${playerName} — ${timeValue.toFixed(2)}s${accuracyText}`;
     leaderboardList.appendChild(li);
   });
 
-  bestTimeEl.textContent = `${saved[0].time.toFixed(2)}s`;
+  bestTimeEl.textContent = `${Number(scores[0].time).toFixed(2)}s`;
+}
+
+async function fetchTopScoresFromAws() {
+  leaderboardLoading = true;
+  renderLeaderboard([]);
+
+  try {
+    const response = await fetch(lambdaGetUrl, {
+      method: "GET"
+    });
+
+    const raw = await response.json();
+
+    const parsed = Array.isArray(raw) ? raw : [];
+    parsed.sort((a, b) => Number(a.time) - Number(b.time));
+
+    cloudScores = parsed.slice(0, 10);
+    return cloudScores;
+  } catch (error) {
+    console.error("Failed to fetch leaderboard:", error);
+    return cloudScores;
+  } finally {
+    leaderboardLoading = false;
+    renderLeaderboard(cloudScores);
+  }
 }
 
 function qualifiesForTop10(timeValue) {
-  const saved = getSavedScores();
-  return saved.length < 10 || timeValue < saved[saved.length - 1].time;
+  const scores = cloudScores.length > 0 ? cloudScores : getSavedScores();
+  return scores.length < 10 || timeValue < Number(scores[scores.length - 1].time);
 }
 
 function getProjectedRank(timeValue) {
-  const saved = getSavedScores();
-  const combined = [...saved, { name: "You", time: timeValue }]
-    .sort((a, b) => a.time - b.time)
+  const scores = cloudScores.length > 0 ? cloudScores : getSavedScores();
+
+  const combined = [...scores, { playerName: "You", time: timeValue }]
+    .sort((a, b) => Number(a.time) - Number(b.time))
     .slice(0, 10);
 
-  const rank = combined.findIndex((entry) => entry.name === "You" && entry.time === timeValue);
+  const rank = combined.findIndex(
+    (entry) => (entry.playerName === "You" || entry.name === "You") && Number(entry.time) === timeValue
+  );
+
   return rank === -1 ? null : rank + 1;
 }
 
@@ -563,6 +692,7 @@ function moveTarget() {
   target.style.top = `${randomY}px`;
 
   setRandomZombieFace();
+  triggerTargetTeleport();
 }
 
 function startTimer() {
@@ -622,7 +752,7 @@ function resetGameState() {
   target.hidden = true;
   burstLayer.innerHTML = "";
   gameArea.style.backgroundImage = `url("${levelBackgrounds[1]}")`;
-  gameArea.classList.remove("level-1", "level-2", "level-3");
+  gameArea.classList.remove("level-1", "level-2", "level-3", "shake", "hit-pulse", "miss-pulse");
   gameArea.classList.add("level-1");
 
   closeModal();
@@ -711,12 +841,11 @@ async function savePendingScore() {
   });
 
   saved.sort((a, b) => a.time - b.time);
-
   const trimmed = saved.slice(0, 10);
   setSavedScores(trimmed);
-  renderLeaderboard();
 
   await saveScoreToAws(name, pendingScore.time, pendingScore.accuracy);
+  await fetchTopScoresFromAws();
 
   resultRank.textContent = "Score saved!";
   nameEntryWrap.classList.add("hidden");
@@ -739,6 +868,7 @@ target.addEventListener("click", (event) => {
   updateCleanupProgress();
   updateAccuracy();
   playLaserSound();
+  triggerHitPulse();
 
   const areaRect = gameArea.getBoundingClientRect();
   const burstX = event.clientX - areaRect.left;
@@ -774,6 +904,7 @@ gameArea.addEventListener("click", (event) => {
   updateAccuracy();
   updateDisplayedClock();
   triggerMissShake();
+  triggerMissPulse();
   showFlash(missPop, "MISS! +1s");
   playMissSound();
 
@@ -838,4 +969,4 @@ injectPolishStyles();
 ensureApocalypseScene();
 updateBackgroundByLevel();
 createParticles();
-renderLeaderboard();
+fetchTopScoresFromAws();
