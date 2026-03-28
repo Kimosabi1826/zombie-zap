@@ -1,8 +1,8 @@
 const goalHits = 30;
 const missPenaltySeconds = 1;
 const leaderboardKey = "zombieZapTop10";
-const lambdaSaveUrl = "https://kkdh7ntgy24mkphgy4wsutfjou0kzndo.lambda-url.us-east-2.on.aws/";
-const lambdaGetUrl = "https://iqvynpjgeoamfhuhcr4k63goxy0pfbfi.lambda-url.us-east-1.on.aws/";
+const lambdaSaveUrl = "https://fhrvao6guduce3aytbmv2xrxam0gxtrc.lambda-url.us-east-1.on.aws/";
+const lambdaGetUrl = "https://iqgynpjqeoamfhuhcr4k63goxy0pfbfi.lambda-url.us-east-1.on.aws/";
 const zombieFaces = ["🧟", "🤢", "💀", "👹"];
 const burstTexts = ["+1", "Nice!", "Headshot!", "Zap!", "Boom!"];
 const levelBackgrounds = {
