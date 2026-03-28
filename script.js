@@ -1,8 +1,15 @@
 const goalHits = 30;
+const missPenaltySeconds = 1;
 const leaderboardKey = "zombieZapTop10";
 const lambdaSaveUrl = "https://kkdh7ntgy24mkphgy4wsutfjou0kzndo.lambda-url.us-east-2.on.aws/";
 const zombieFaces = ["🧟", "🤢", "💀", "👹"];
 const burstTexts = ["+1", "Nice!", "Headshot!", "Zap!", "Boom!"];
+const levelBackgrounds = {
+  1: "bg_level1.png",
+  2: "bg_level2.png",
+  3: "bg_level3.png"
+};
+const walkerFaces = ["🧟", "🧟‍♂️", "🧟‍♀️", "💀"];
 
 const hitsEl = document.getElementById("hits");
 const timeEl = document.getElementById("time");
@@ -44,6 +51,7 @@ const particlesEl = document.getElementById("particles");
 let hits = 0;
 let misses = 0;
 let totalClicks = 0;
+let penaltyTime = 0;
 let level = 1;
 let combo = 0;
 let gameRunning = false;
@@ -53,6 +61,227 @@ let pendingScore = null;
 
 let soundEnabled = true;
 let audioCtx = null;
+
+function injectPolishStyles() {
+  if (document.getElementById("zombie-zap-polish-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "zombie-zap-polish-styles";
+  style.textContent = `
+    .game-area {
+      transition: background-image 0.45s ease, box-shadow 0.25s ease;
+    }
+
+    .game-area.shake {
+      animation: zzShake 0.28s ease;
+    }
+
+    @keyframes zzShake {
+      0% { transform: translateX(0); }
+      15% { transform: translateX(-8px); }
+      30% { transform: translateX(8px); }
+      45% { transform: translateX(-6px); }
+      60% { transform: translateX(6px); }
+      75% { transform: translateX(-3px); }
+      100% { transform: translateX(0); }
+    }
+
+    .ember-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      overflow: hidden;
+    }
+
+    .ember {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #ffd27a 0%, #ff8b2d 55%, rgba(255, 90, 0, 0.0) 100%);
+      box-shadow: 0 0 10px rgba(255, 120, 0, 0.45);
+      opacity: 0.75;
+      animation: emberRise linear infinite;
+    }
+
+    @keyframes emberRise {
+      0% {
+        transform: translateY(0) translateX(0) scale(0.8);
+        opacity: 0;
+      }
+      15% {
+        opacity: 0.85;
+      }
+      100% {
+        transform: translateY(-260px) translateX(18px) scale(1.3);
+        opacity: 0;
+      }
+    }
+
+    .walker-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+      overflow: hidden;
+    }
+
+    .walker {
+      position: absolute;
+      bottom: 12px;
+      font-size: 2rem;
+      opacity: 0.72;
+      filter: drop-shadow(0 6px 8px rgba(0,0,0,0.35));
+      animation: walkerBob 2s ease-in-out infinite;
+      user-select: none;
+    }
+
+    .walker.left {
+      animation-name: walkerBob, walkerDriftLeft;
+      animation-duration: 2.2s, 11s;
+      animation-iteration-count: infinite, infinite;
+      animation-timing-function: ease-in-out, linear;
+    }
+
+    .walker.right {
+      animation-name: walkerBob, walkerDriftRight;
+      animation-duration: 2.4s, 12s;
+      animation-iteration-count: infinite, infinite;
+      animation-timing-function: ease-in-out, linear;
+    }
+
+    @keyframes walkerBob {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-6px) scale(1.03); }
+    }
+
+    @keyframes walkerDriftLeft {
+      0% { left: 2%; }
+      50% { left: 8%; }
+      100% { left: 2%; }
+    }
+
+    @keyframes walkerDriftRight {
+      0% { right: 2%; }
+      50% { right: 8%; }
+      100% { right: 2%; }
+    }
+
+    .game-area.level-1 {
+      box-shadow:
+        inset 0 0 40px rgba(255, 80, 20, 0.05),
+        0 20px 40px rgba(0,0,0,0.32);
+    }
+
+    .game-area.level-2 {
+      box-shadow:
+        inset 0 0 45px rgba(255, 90, 30, 0.08),
+        0 20px 40px rgba(0,0,0,0.34);
+    }
+
+    .game-area.level-3 {
+      box-shadow:
+        inset 0 0 60px rgba(255, 60, 20, 0.12),
+        0 20px 40px rgba(0,0,0,0.38);
+    }
+
+    #target {
+      z-index: 8 !important;
+    }
+
+    .score-burst {
+      z-index: 9 !important;
+    }
+
+    #levelFlash,
+    #comboPop,
+    #missPop {
+      z-index: 10 !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureApocalypseScene() {
+  if (!gameArea) return;
+
+  let emberLayer = gameArea.querySelector(".ember-layer");
+  if (!emberLayer) {
+    emberLayer = document.createElement("div");
+    emberLayer.className = "ember-layer";
+    gameArea.appendChild(emberLayer);
+  }
+
+  if (emberLayer.children.length === 0) {
+    for (let i = 0; i < 26; i += 1) {
+      const ember = document.createElement("span");
+      ember.className = "ember";
+      ember.style.left = `${Math.random() * 100}%`;
+      ember.style.bottom = `${Math.random() * 28}px`;
+      ember.style.animationDuration = `${4 + Math.random() * 5}s`;
+      ember.style.animationDelay = `${Math.random() * 5}s`;
+      ember.style.width = `${2 + Math.random() * 4}px`;
+      ember.style.height = ember.style.width;
+      emberLayer.appendChild(ember);
+    }
+  }
+
+  let walkerLayer = gameArea.querySelector(".walker-layer");
+  if (!walkerLayer) {
+    walkerLayer = document.createElement("div");
+    walkerLayer.className = "walker-layer";
+    gameArea.appendChild(walkerLayer);
+  }
+
+  updateWalkerLayer();
+}
+
+function updateWalkerLayer() {
+  const walkerLayer = gameArea.querySelector(".walker-layer");
+  if (!walkerLayer) return;
+
+  walkerLayer.innerHTML = "";
+
+  let walkerCount = 2;
+  if (level === 2) walkerCount = 4;
+  if (level === 3) walkerCount = 6;
+
+  for (let i = 0; i < walkerCount; i += 1) {
+    const walker = document.createElement("span");
+    walker.className = `walker ${i % 2 === 0 ? "left" : "right"}`;
+    walker.textContent = randomFrom(walkerFaces);
+    walker.style.bottom = `${10 + Math.random() * 80}px`;
+    walker.style.fontSize = `${1.7 + Math.random() * 0.9}rem`;
+    walker.style.opacity = `${0.45 + Math.random() * 0.35}`;
+
+    if (walker.classList.contains("left")) {
+      walker.style.left = `${2 + Math.random() * 8}%`;
+    } else {
+      walker.style.right = `${2 + Math.random() * 8}%`;
+    }
+
+    walkerLayer.appendChild(walker);
+  }
+}
+
+function updateBackgroundByLevel() {
+  if (!gameArea) return;
+
+  const bg = levelBackgrounds[level] || levelBackgrounds[1];
+  gameArea.style.backgroundImage = `url("${bg}")`;
+
+  gameArea.classList.remove("level-1", "level-2", "level-3");
+  gameArea.classList.add(`level-${level}`);
+
+  updateWalkerLayer();
+}
+
+function triggerMissShake() {
+  gameArea.classList.remove("shake");
+  void gameArea.offsetWidth;
+  gameArea.classList.add("shake");
+}
 
 function getAudioContext() {
   if (!audioCtx) {
@@ -265,6 +494,15 @@ function updateAccuracy() {
   return accuracy;
 }
 
+function getDisplayTimeValue() {
+  if (!startTime) return penaltyTime;
+  return (performance.now() - startTime) / 1000 + penaltyTime;
+}
+
+function updateDisplayedClock() {
+  timeEl.textContent = getDisplayTimeValue().toFixed(2);
+}
+
 function updateLevel() {
   let newLevel = 1;
 
@@ -277,6 +515,7 @@ function updateLevel() {
   if (newLevel !== level) {
     level = newLevel;
     levelEl.textContent = String(level);
+    updateBackgroundByLevel();
     showFlash(levelFlash, `LEVEL ${level}!`);
     messageEl.textContent = `Uh oh... the zombies got faster. Level ${level}!`;
     playLevelUpSound();
@@ -301,9 +540,9 @@ function breakComboOnMiss() {
 }
 
 function getTargetSize() {
-  if (level === 1) return 88;
-  if (level === 2) return 68;
-  return 52;
+  if (level === 1) return 98;
+  if (level === 2) return 76;
+  return 60;
 }
 
 function moveTarget() {
@@ -330,8 +569,7 @@ function startTimer() {
   startTime = performance.now();
 
   timerInterval = setInterval(() => {
-    const elapsed = (performance.now() - startTime) / 1000;
-    timeEl.textContent = elapsed.toFixed(2);
+    updateDisplayedClock();
   }, 20);
 }
 
@@ -361,6 +599,7 @@ function resetGameState() {
   hits = 0;
   misses = 0;
   totalClicks = 0;
+  penaltyTime = 0;
   level = 1;
   combo = 0;
   gameRunning = false;
@@ -382,6 +621,9 @@ function resetGameState() {
   messageEl.textContent = "Press Start and prepare to roast some zombies.";
   target.hidden = true;
   burstLayer.innerHTML = "";
+  gameArea.style.backgroundImage = `url("${levelBackgrounds[1]}")`;
+  gameArea.classList.remove("level-1", "level-2", "level-3");
+  gameArea.classList.add("level-1");
 
   closeModal();
 }
@@ -394,6 +636,7 @@ function startGame() {
   messageEl.textContent = "Zap the zombie heads before they take over!";
   target.hidden = false;
 
+  updateBackgroundByLevel();
   triggerFlash();
   moveTarget();
   startTimer();
@@ -526,17 +769,20 @@ gameArea.addEventListener("click", (event) => {
 
   totalClicks += 1;
   misses += 1;
+  penaltyTime += missPenaltySeconds;
   breakComboOnMiss();
   updateAccuracy();
-  showFlash(missPop, "MISS!");
+  updateDisplayedClock();
+  triggerMissShake();
+  showFlash(missPop, "MISS! +1s");
   playMissSound();
 
   if (misses < 4) {
-    messageEl.textContent = "You missed. The zombies are laughing.";
+    messageEl.textContent = "You missed. +1 second. The zombies approve.";
   } else if (misses < 8) {
-    messageEl.textContent = "Easy there, cowboy. Aim first.";
+    messageEl.textContent = "Too wild. +1 second. Aim first.";
   } else {
-    messageEl.textContent = "Spray-and-pray is not the move.";
+    messageEl.textContent = "Spray-and-pray is expensive. +1 second.";
   }
 });
 
@@ -588,5 +834,8 @@ window.addEventListener("resize", () => {
   }
 });
 
+injectPolishStyles();
+ensureApocalypseScene();
+updateBackgroundByLevel();
 createParticles();
 renderLeaderboard();
