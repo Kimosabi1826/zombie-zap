@@ -3,6 +3,7 @@ const missPenaltySeconds = 1;
 const leaderboardKey = "zombieZapTop10";
 const lambdaSaveUrl = "https://fhrvao6guduce3aytbmv2xrxam0gxtrc.lambda-url.us-east-1.on.aws/";
 const lambdaGetUrl = "https://iqgynpjqeoamfhuhcr4k63goxy0pfbfi.lambda-url.us-east-1.on.aws/";
+
 const zombieFaces = ["🧟", "🤢", "💀", "👹"];
 const burstTexts = ["+1", "Nice!", "Headshot!", "Zap!", "Boom!"];
 const levelBackgrounds = {
@@ -10,7 +11,13 @@ const levelBackgrounds = {
   2: "bg_level2.png",
   3: "bg_level3.png"
 };
-const walkerFaces = ["🧟", "🧟‍♂️", "🧟‍♀️", "💀"];
+const walkerFaces = [
+  "🧟", "🧟‍♂️", "🧟‍♀️",
+  "🧟", "🧟‍♂️", "🧟‍♀️",
+  "🧟", "🧟‍♂️", "🧟‍♀️",
+  "🧟", "🧟‍♂️", "🧟‍♀️",
+  "💀"
+];
 
 const hitsEl = document.getElementById("hits");
 const timeEl = document.getElementById("time");
@@ -565,11 +572,11 @@ async function fetchTopScoresFromAws() {
     });
 
     const raw = await response.json();
-
     const parsed = Array.isArray(raw) ? raw : [];
-    parsed.sort((a, b) => Number(a.time) - Number(b.time));
 
+    parsed.sort((a, b) => Number(a.time) - Number(b.time));
     cloudScores = parsed.slice(0, 10);
+
     return cloudScores;
   } catch (error) {
     console.error("Failed to fetch leaderboard:", error);
@@ -808,48 +815,44 @@ function finishGame() {
 }
 
 async function saveScoreToAws(name, time, accuracy) {
-  try {
-    const response = await fetch(lambdaSaveUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        playerName: name,
-        time: time,
-        accuracy: accuracy
-      })
-    });
+  const response = await fetch(lambdaSaveUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      playerName: name,
+      time: time,
+      accuracy: accuracy
+    })
+  });
 
-    const result = await response.json();
-    console.log("AWS save result:", result);
-  } catch (error) {
-    console.error("AWS save failed:", error);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || "Save request failed");
   }
+
+  console.log("AWS save result:", result);
+  return result;
 }
 
 async function savePendingScore() {
   if (!pendingScore || !pendingScore.qualifies) return;
 
   const name = playerNameInput.value.trim() || "Player";
-  const saved = getSavedScores();
 
-  saved.push({
-    name,
-    time: pendingScore.time,
-    accuracy: pendingScore.accuracy
-  });
+  try {
+    await saveScoreToAws(name, pendingScore.time, pendingScore.accuracy);
+    await fetchTopScoresFromAws();
 
-  saved.sort((a, b) => a.time - b.time);
-  const trimmed = saved.slice(0, 10);
-  setSavedScores(trimmed);
-
-  await saveScoreToAws(name, pendingScore.time, pendingScore.accuracy);
-  await fetchTopScoresFromAws();
-
-  resultRank.textContent = "Score saved!";
-  nameEntryWrap.classList.add("hidden");
-  pendingScore = null;
+    resultRank.textContent = "Score saved!";
+    nameEntryWrap.classList.add("hidden");
+    pendingScore = null;
+  } catch (error) {
+    console.error("Save failed:", error);
+    resultRank.textContent = "Save failed";
+  }
 }
 
 target.addEventListener("click", (event) => {
